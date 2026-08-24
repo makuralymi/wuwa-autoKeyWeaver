@@ -7,6 +7,8 @@ const cur = () => store.songs[store.current];
 
 let store = null;
 const state = { selected: 0 };
+// 播放中禁止编辑：播放（含悬浮窗发起）时置 true，play-end / 停止时置 false
+let playing = false;
 
 /* ============ 渲染 ============ */
 
@@ -31,11 +33,13 @@ function renderTabs() {
     chip.querySelector(".chip-name").textContent = song.name;
     chip.querySelector(".chip-name").addEventListener("click", async () => {
       if (i === store.current) return;
+      if (!canEdit()) return;
       store = await WM.api.selectSong(i);
       state.selected = 0;
       renderAll();
     });
     chip.querySelector(".chip-name").addEventListener("dblclick", async () => {
+      if (!canEdit()) return;
       const name = prompt("谱面名称", song.name);
       if (name && name.trim()) {
         song.name = name.trim().slice(0, 30);
@@ -44,6 +48,7 @@ function renderTabs() {
     });
     chip.querySelector(".chip-del").addEventListener("click", async (e) => {
       e.stopPropagation();
+      if (!canEdit()) return;
       if (store.songs.length <= 1) {
         setStatus("至少保留一个谱面", true);
         return;
@@ -58,6 +63,7 @@ function renderTabs() {
   add.className = "chip add";
   add.textContent = "＋ 新谱面";
   add.addEventListener("click", async () => {
+    if (!canEdit()) return;
     store.songs.push({ name: `曲谱 ${store.songs.length + 1}`, bpm: 120, notes: new Array(32).fill(null).map(() => []) });
     store.current = store.songs.length - 1;
     state.selected = 0;
@@ -115,6 +121,7 @@ function renderPalette() {
   rest.innerHTML = `${WM.noteHtml(0)}<span class="key">休止</span>`;
   rest.title = "清空选中拍";
   rest.addEventListener("click", () => {
+    if (!canEdit()) return;
     cur().notes[state.selected] = [];
     commit();
   });
@@ -135,6 +142,7 @@ async function commit() {
 
 // 在选中拍上添加/移除音符（支持和弦）
 function toggleNote(id) {
+  if (!canEdit()) return;
   const beat = cur().notes[state.selected];
   const at = beat.indexOf(id);
   if (at >= 0) beat.splice(at, 1);
@@ -143,6 +151,7 @@ function toggleNote(id) {
 }
 
 function setBeats(n) {
+  if (!canEdit()) return;
   n = Math.max(1, Math.min(WM.MAX_BEATS, Math.floor(n) || 1));
   const notes = cur().notes.slice(0, n);
   while (notes.length < n) notes.push([]);
@@ -160,9 +169,30 @@ function setStatus(text, warn = false) {
 /* ============ 播放 ============ */
 
 function setPlaying(on) {
+  playing = on;
   $("btn-play").disabled = on;
   $("btn-stop").disabled = !on;
+  setEditingEnabled(!on);
   if (!on) clearHighlight();
+}
+
+// 播放时禁止编辑：统一拦截编辑操作并提示
+function canEdit() {
+  if (playing) {
+    setStatus("播放中禁止编辑，请先停止", true);
+    return false;
+  }
+  return true;
+}
+
+// 禁用/恢复所有编辑控件（音符面板、工具栏输入、谱面栏）
+function setEditingEnabled(enabled) {
+  document.querySelectorAll(".note-btn").forEach((b) => (b.disabled = !enabled));
+  ["beats-input", "apply-beats", "bpm-input", "countdown-input", "btn-import", "import-file"].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !enabled;
+  });
+  $("song-tabs").classList.toggle("locked", !enabled);
 }
 
 function highlightBeat(i) {
@@ -181,7 +211,12 @@ function clearHighlight() {
 async function play() {
   try {
     setPlaying(true);
-    setStatus(WM.isTauri ? "倒计时…请切换到目标游戏窗口" : "预览模式：仅高亮不模拟按键");
+    if (WM.isTauri && (await WM.api.gameRunning())) {
+      const ok = await WM.api.focusGame();
+      setStatus(ok ? "检测到游戏进程，已切换过去" : "游戏运行中，请手动切换到游戏窗口");
+    } else {
+      setStatus(WM.isTauri ? "倒计时…请切换到目标游戏窗口" : "预览模式：仅高亮不模拟按键");
+    }
     await WM.api.playCurrent();
   } catch (err) {
     setPlaying(false);
@@ -209,6 +244,7 @@ function exportSong() {
 }
 
 function importSong(file) {
+  if (!canEdit()) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
@@ -234,6 +270,7 @@ function importSong(file) {
 
 document.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
+  if (playing) return; // 播放中禁止键盘编辑（方向键仅选中，不影响数据，一并禁用）
   const k = e.key.toUpperCase();
   if (WM.KEY_TO_NOTE[k] !== undefined) {
     e.preventDefault();
@@ -271,10 +308,14 @@ document.addEventListener("keydown", (e) => {
 /* ============ 事件与初始化 ============ */
 
 WM.on("countdown", (n) => {
+  if (!playing) setPlaying(true); // 悬浮窗等其他窗口发起的播放，同样禁用编辑
   if (n > 0) setStatus(`倒计时 ${n} 秒…`);
   else setStatus("正在播放…");
 });
-WM.on("play-progress", (i) => highlightBeat(i));
+WM.on("play-progress", (i) => {
+  if (!playing) setPlaying(true);
+  highlightBeat(i);
+});
 WM.on("play-end", () => {
   setPlaying(false);
   setStatus("播放结束");
@@ -294,10 +335,12 @@ function bindToolbar() {
     if (e.key === "Enter") setBeats(parseInt($("beats-input").value, 10));
   });
   $("bpm-input").addEventListener("change", () => {
+    if (!canEdit()) return;
     cur().bpm = parseInt($("bpm-input").value, 10) || 120;
     commit();
   });
   $("countdown-input").addEventListener("change", () => {
+    if (!canEdit()) return;
     store.countdown = parseInt($("countdown-input").value, 10) || 0;
     commit();
   });

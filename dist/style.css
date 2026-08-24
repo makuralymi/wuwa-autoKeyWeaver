@@ -64,6 +64,7 @@ main {
   color: var(--text);
   font-size: 14px;
 }
+.field input:disabled { opacity: 0.45; }
 .spacer { flex: 1; }
 .sep { width: 1px; height: 24px; background: var(--panel-border); }
 
@@ -126,6 +127,8 @@ main {
   padding: 0 4px;
 }
 .note-btn.rest { width: 124px; }
+.note-btn:disabled { opacity: 0.45; cursor: default; }
+.note-btn:disabled:hover { background: var(--cell); border-color: var(--panel-border); }
 
 /* ---------- 简谱音符 ---------- */
 .jianpu {
@@ -231,6 +234,11 @@ main {
   padding: 4px 12px;
 }
 .chip.add:hover { color: var(--text); border-color: var(--accent); }
+/* 播放中锁定谱面栏（禁止增删改/切换） */
+.song-tabs.locked .chip { opacity: 0.55; }
+.song-tabs.locked .chip-name,
+.song-tabs.locked .chip-del,
+.song-tabs.locked .chip.add { cursor: default; }
 
 /* ---------- 悬浮窗 ---------- */
 body.overlay {

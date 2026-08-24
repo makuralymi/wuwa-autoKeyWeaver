@@ -40,7 +40,16 @@ async function refresh() {
 
 $("ov-play").addEventListener("click", async () => {
   setPlayingUi(true);
-  setStatus(store.countdown > 0 ? String(store.countdown) : "0");
+  try {
+    if (WM.isTauri && (await WM.api.gameRunning())) {
+      const ok = await WM.api.focusGame();
+      setStatus(ok ? "已跳转游戏" : "请手动切换");
+    } else {
+      setStatus(store.countdown > 0 ? String(store.countdown) : "0");
+    }
+  } catch (err) {
+    setStatus(`失败:${err}`.slice(0, 40));
+  }
   WM.api.playCurrent().catch((err) => {
     setPlayingUi(false);
     setStatus(`失败:${err}`.slice(0, 40));

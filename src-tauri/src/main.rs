@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod chart;
+mod game;
 mod keyboard;
 
 use chart::{note_to_char, parse_chart, DEFAULT_SONG_TEXT};
@@ -277,6 +278,18 @@ fn stop_score() {
     stop_playback();
 }
 
+/// 是否检测到游戏（鸣潮）进程在运行
+#[tauri::command]
+fn game_running() -> bool {
+    game::game_running()
+}
+
+/// 若游戏进程在运行，将其窗口切换到前台；返回是否成功
+#[tauri::command]
+fn focus_game() -> bool {
+    game::focus_game()
+}
+
 fn stop_playback() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
     PAUSED.store(false, Ordering::SeqCst);
@@ -324,7 +337,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_store, save_store, select_song, play_current, pause_score, stop_score
+            get_store, save_store, select_song, play_current, pause_score, stop_score,
+            game_running, focus_game
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

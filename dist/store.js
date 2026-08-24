@@ -250,6 +250,8 @@ const WM = (() => {
         playCurrent: () => tauri.core.invoke("play_current"),
         pause: (p) => tauri.core.invoke("pause_score", { paused: p }),
         stop: () => tauri.core.invoke("stop_score"),
+        gameRunning: () => tauri.core.invoke("game_running"),
+        focusGame: () => tauri.core.invoke("focus_game"),
         showOverlay: () => tauri.window.getByLabel("overlay")?.show(),
         hideOverlay: () => tauri.window.getByLabel("overlay")?.hide(),
       }
