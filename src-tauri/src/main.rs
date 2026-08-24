@@ -26,6 +26,8 @@ static STOP_REASON: AtomicU32 = AtomicU32::new(0);
 
 const MAX_NOTES: usize = 1024;
 const MAX_CHORD: usize = 8;
+/// 数据版本：新增内置预设曲目时递增，用于启动时迁移旧存档
+const STORE_VERSION: u32 = 2;
 
 /// 单个音符事件：一个和弦（可空 = 休止）+ 时值
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,23 +58,52 @@ pub struct Store {
     pub current: usize,
     /// 播放前倒计时秒数（0 = 不倒计时）
     pub countdown: u32,
+    /// 数据版本，用于迁移（新增预设曲目时递增）
+    #[serde(default)]
+    pub version: u32,
 }
 
 impl Default for Store {
     fn default() -> Self {
         Store {
-            songs: vec![Song {
-                name: "远航星的告别".into(),
-                bpm: 96,
-                beats_per_measure: 4,
-                notes: parse_chart(DEFAULT_SONG_TEXT)
-                    .into_iter()
-                    .map(|ids| NoteEvent { ids, ticks: 4 })
-                    .collect(),
-            }],
+            songs: vec![
+                Song {
+                    name: "远航星的告别".into(),
+                    bpm: 96,
+                    beats_per_measure: 4,
+                    notes: parse_chart(DEFAULT_SONG_TEXT)
+                        .into_iter()
+                        .map(|ids| NoteEvent { ids, ticks: 4 })
+                        .collect(),
+                },
+                Song {
+                    name: "且听风吟".into(),
+                    bpm: 147,
+                    beats_per_measure: 4,
+                    notes: qietingfengyin_notes(),
+                },
+            ],
             current: 0,
             countdown: 3,
+            version: STORE_VERSION,
         }
+    }
+}
+
+/// 《且听风吟》默认谱面数据（JSON，由 MIDI 转换，见下方占位符注入）
+const QTFY_JSON: &str = r#"[{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[11],"ticks":1},{"ids":[13,20],"ticks":1},{"ids":[17],"ticks":5},{"ids":[16],"ticks":2},{"ids":[19],"ticks":1},{"ids":[20],"ticks":1},{"ids":[16],"ticks":1},{"ids":[19],"ticks":1},{"ids":[20],"ticks":2},{"ids":[16],"ticks":9},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[12,20],"ticks":1},{"ids":[15],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":7},{"ids":[16],"ticks":2},{"ids":[19],"ticks":1},{"ids":[4,20],"ticks":7},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":4},{"ids":[15],"ticks":1},{"ids":[14],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[17],"ticks":4},{"ids":[15],"ticks":1},{"ids":[14],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[17,20],"ticks":1},{"ids":[17,19],"ticks":1},{"ids":[5,20],"ticks":2},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[16],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[16,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[16,20],"ticks":1},{"ids":[17,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[14],"ticks":1},{"ids":[16],"ticks":1},{"ids":[12],"ticks":1},{"ids":[17],"ticks":1},{"ids":[13],"ticks":1},{"ids":[19],"ticks":1},{"ids":[5],"ticks":1},{"ids":[16],"ticks":1},{"ids":[17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[20],"ticks":1},{"ids":[21],"ticks":1},{"ids":[17,21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[16],"ticks":1},{"ids":[21],"ticks":1},{"ids":[17],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[17,21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[16],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[17],"ticks":1},{"ids":[21],"ticks":1},{"ids":[20],"ticks":1},{"ids":[21],"ticks":1},{"ids":[17,21],"ticks":1},{"ids":[16,21],"ticks":1},{"ids":[17,21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[6,20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[15],"ticks":1},{"ids":[13],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[15],"ticks":2},{"ids":[13],"ticks":2},{"ids":[10],"ticks":2},{"ids":[13],"ticks":1},{"ids":[10],"ticks":1},{"ids":[8],"ticks":2},{"ids":[7],"ticks":2},{"ids":[6],"ticks":2},{"ids":[10],"ticks":2},{"ids":[12],"ticks":2},{"ids":[13],"ticks":2},{"ids":[16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[15],"ticks":2},{"ids":[17],"ticks":2},{"ids":[19],"ticks":2},{"ids":[20],"ticks":2},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[21],"ticks":2},{"ids":[16],"ticks":2},{"ids":[17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[15],"ticks":2},{"ids":[21],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[15],"ticks":2},{"ids":[13],"ticks":28},{"ids":[19],"ticks":4},{"ids":[20],"ticks":4},{"ids":[16],"ticks":4},{"ids":[5,17],"ticks":1},{"ids":[15],"ticks":16},{"ids":[15],"ticks":12},{"ids":[17],"ticks":4},{"ids":[14],"ticks":16},{"ids":[14],"ticks":8},{"ids":[15],"ticks":4},{"ids":[16],"ticks":4},{"ids":[6,10,13],"ticks":16},{"ids":[15],"ticks":8},{"ids":[19],"ticks":4},{"ids":[19],"ticks":4},{"ids":[5,9,12],"ticks":16},{"ids":[19],"ticks":4},{"ids":[20],"ticks":4},{"ids":[17],"ticks":8},{"ids":[4,8,11,16],"ticks":16},{"ids":[15],"ticks":4},{"ids":[19],"ticks":8},{"ids":[14],"ticks":4},{"ids":[5,9,12],"ticks":16},{"ids":[14],"ticks":4},{"ids":[15],"ticks":8},{"ids":[17],"ticks":4},{"ids":[6,10,13],"ticks":16},{"ids":[15],"ticks":8},{"ids":[16],"ticks":4},{"ids":[17],"ticks":4},{"ids":[2,9],"ticks":4},{"ids":[14],"ticks":12},{"ids":[17],"ticks":4},{"ids":[19],"ticks":8},{"ids":[20],"ticks":4},{"ids":[4,8,11,15,17,20],"ticks":4},{"ids":[15],"ticks":4},{"ids":[17],"ticks":4},{"ids":[15],"ticks":4},{"ids":[19,20],"ticks":4},{"ids":[15,19],"ticks":4},{"ids":[16],"ticks":4},{"ids":[15,19],"ticks":4},{"ids":[5,9,12,14,16,19],"ticks":4},{"ids":[14,17],"ticks":4},{"ids":[19],"ticks":4},{"ids":[14,16],"ticks":4},{"ids":[16],"ticks":4},{"ids":[12,15],"ticks":4},{"ids":[14,19],"ticks":4},{"ids":[12,19],"ticks":4},{"ids":[6,10,13,17],"ticks":4},{"ids":[10],"ticks":4},{"ids":[13,16],"ticks":4},{"ids":[10],"ticks":4},{"ids":[15,20],"ticks":4},{"ids":[10],"ticks":4},{"ids":[13,17],"ticks":4},{"ids":[10,17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[5,9,12,16],"ticks":4},{"ids":[9],"ticks":4},{"ids":[12,17],"ticks":4},{"ids":[9],"ticks":4},{"ids":[9,12,19],"ticks":4},{"ids":[5,13,20],"ticks":4},{"ids":[12,16,19],"ticks":4},{"ids":[5,12,16],"ticks":4},{"ids":[4,8,11],"ticks":1},{"ids":[15],"ticks":1},{"ids":[19],"ticks":1},{"ids":[16,17],"ticks":1},{"ids":[17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[20],"ticks":4},{"ids":[16],"ticks":4},{"ids":[11,12,19],"ticks":4},{"ids":[4,13,20],"ticks":4},{"ids":[8,15,16,19],"ticks":4},{"ids":[4,17,20],"ticks":4},{"ids":[5,10,12],"ticks":1},{"ids":[8],"ticks":1},{"ids":[12],"ticks":1},{"ids":[9,16,21],"ticks":1},{"ids":[12],"ticks":1},{"ids":[16],"ticks":1},{"ids":[21],"ticks":4},{"ids":[12,16],"ticks":4},{"ids":[9,16,19],"ticks":4},{"ids":[5,19,21],"ticks":4},{"ids":[12,16],"ticks":4},{"ids":[10,17,20],"ticks":4},{"ids":[8,12,14],"ticks":1},{"ids":[12],"ticks":1},{"ids":[19],"ticks":1},{"ids":[16,19],"ticks":1},{"ids":[14],"ticks":1},{"ids":[17],"ticks":1},{"ids":[21],"ticks":4},{"ids":[12,19],"ticks":4},{"ids":[16,19],"ticks":4},{"ids":[12,19],"ticks":4},{"ids":[14,19],"ticks":4},{"ids":[12,19],"ticks":4},{"ids":[8,10,12,14,17],"ticks":8},{"ids":[19],"ticks":8},{"ids":[16],"ticks":4},{"ids":[17],"ticks":4},{"ids":[19],"ticks":4},{"ids":[20],"ticks":4},{"ids":[4,17,19],"ticks":4},{"ids":[15,18,20],"ticks":4},{"ids":[15,19,21],"ticks":4},{"ids":[11],"ticks":4},{"ids":[4,17,20],"ticks":4},{"ids":[8,16,20],"ticks":4},{"ids":[4,15,19],"ticks":4},{"ids":[6,19,21],"ticks":1},{"ids":[6],"ticks":4},{"ids":[5],"ticks":4},{"ids":[19],"ticks":4},{"ids":[16],"ticks":4},{"ids":[12],"ticks":4},{"ids":[5],"ticks":4},{"ids":[12],"ticks":4},{"ids":[19,20],"ticks":4},{"ids":[7,14,19],"ticks":4},{"ids":[6,19,21],"ticks":4},{"ids":[13,17,20],"ticks":4},{"ids":[10,15,20],"ticks":4},{"ids":[6],"ticks":4},{"ids":[15,17,20],"ticks":4},{"ids":[13,15,17],"ticks":4},{"ids":[7,14],"ticks":4},{"ids":[8,15,16,19],"ticks":4},{"ids":[5],"ticks":4},{"ids":[9],"ticks":4},{"ids":[14],"ticks":4},{"ids":[12],"ticks":4},{"ids":[13,17],"ticks":2},{"ids":[12],"ticks":2},{"ids":[10,17,19],"ticks":4},{"ids":[14,18,20],"ticks":4},{"ids":[10,15,20],"ticks":4},{"ids":[4,11,16,20],"ticks":4},{"ids":[13,18,20],"ticks":2},{"ids":[16],"ticks":2},{"ids":[4,11,16,20],"ticks":8},{"ids":[5,12,16,21],"ticks":4},{"ids":[17,21],"ticks":8},{"ids":[19,21],"ticks":2},{"ids":[5,12],"ticks":2},{"ids":[6,10,15],"ticks":4},{"ids":[14,16,21],"ticks":4},{"ids":[5,9,14],"ticks":4},{"ids":[13,15,20],"ticks":4},{"ids":[4,8,13],"ticks":8},{"ids":[15,20],"ticks":4},{"ids":[20,21],"ticks":4},{"ids":[2,9,17,20],"ticks":4},{"ids":[10,15,17],"ticks":4},{"ids":[13,15,20],"ticks":4},{"ids":[10],"ticks":4},{"ids":[3,19,21],"ticks":4},{"ids":[12,15,20],"ticks":4},{"ids":[12,15,19,20],"ticks":8},{"ids":[6,16,19],"ticks":4},{"ids":[10,17,20],"ticks":4},{"ids":[10,20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[10,21],"ticks":2},{"ids":[20],"ticks":2},{"ids":[10,19],"ticks":2},{"ids":[20],"ticks":2},{"ids":[6,16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[6,21],"ticks":2},{"ids":[15],"ticks":2},{"ids":[6,19],"ticks":2},{"ids":[20],"ticks":2},{"ids":[4,19],"ticks":2},{"ids":[20],"ticks":4},{"ids":[19],"ticks":2},{"ids":[10,17,20],"ticks":8},{"ids":[5,20],"ticks":6},{"ids":[17],"ticks":2},{"ids":[10,17],"ticks":2},{"ids":[17],"ticks":2},{"ids":[17],"ticks":2},{"ids":[17],"ticks":2},{"ids":[5,16],"ticks":8},{"ids":[9,16],"ticks":8},{"ids":[14,16],"ticks":4},{"ids":[21],"ticks":2},{"ids":[20],"ticks":2},{"ids":[12,19],"ticks":2},{"ids":[20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[19],"ticks":2},{"ids":[1,5,8,17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[10,19],"ticks":8},{"ids":[17,19],"ticks":8},{"ids":[15,20],"ticks":2},{"ids":[19],"ticks":2},{"ids":[17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[5,16],"ticks":8},{"ids":[12,16],"ticks":8},{"ids":[14,21],"ticks":2},{"ids":[19],"ticks":2},{"ids":[17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[12,15],"ticks":2},{"ids":[13],"ticks":2},{"ids":[15],"ticks":2},{"ids":[16],"ticks":2},{"ids":[3,10,15],"ticks":2},{"ids":[15],"ticks":1},{"ids":[15],"ticks":1},{"ids":[15],"ticks":1},{"ids":[15],"ticks":1},{"ids":[15],"ticks":1},{"ids":[15],"ticks":1},{"ids":[3,10],"ticks":1},{"ids":[15],"ticks":1},{"ids":[15],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[3,10,16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":1},{"ids":[19],"ticks":2},{"ids":[16],"ticks":2},{"ids":[15],"ticks":2},{"ids":[20],"ticks":2},{"ids":[15],"ticks":2},{"ids":[16],"ticks":2},{"ids":[2,9,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[9,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[2,9],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[2,9],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[21],"ticks":4},{"ids":[19],"ticks":4},{"ids":[17],"ticks":4},{"ids":[21],"ticks":4},{"ids":[3,10,21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[3,10],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[3,10,21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[7,11],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[7,11],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[21],"ticks":1},{"ids":[3,10,20,21],"ticks":2},{"ids":[21],"ticks":2},{"ids":[17],"ticks":2},{"ids":[20],"ticks":2},{"ids":[3,10,17],"ticks":8},{"ids":[17],"ticks":4},{"ids":[19],"ticks":8},{"ids":[20],"ticks":4},{"ids":[11],"ticks":16},{"ids":[20],"ticks":4},{"ids":[19],"ticks":4},{"ids":[16],"ticks":4},{"ids":[19],"ticks":4},{"ids":[12,16],"ticks":4},{"ids":[17],"ticks":8},{"ids":[16],"ticks":8},{"ids":[15],"ticks":4},{"ids":[16,19],"ticks":4},{"ids":[16,19],"ticks":4},{"ids":[6,19],"ticks":1},{"ids":[6],"ticks":1},{"ids":[20],"ticks":1},{"ids":[6],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[6,19],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[6,19],"ticks":8},{"ids":[15,17],"ticks":4},{"ids":[16,21],"ticks":4},{"ids":[5,19],"ticks":1},{"ids":[5],"ticks":1},{"ids":[20],"ticks":1},{"ids":[5],"ticks":1},{"ids":[17],"ticks":1},{"ids":[16],"ticks":1},{"ids":[17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[5,17],"ticks":1},{"ids":[19],"ticks":1},{"ids":[21],"ticks":5},{"ids":[12,19],"ticks":4},{"ids":[13,20],"ticks":4},{"ids":[16,19],"ticks":4},{"ids":[16,20],"ticks":4},{"ids":[4],"ticks":4},{"ids":[8,15,17],"ticks":4},{"ids":[11,13],"ticks":4},{"ids":[15,17],"ticks":2},{"ids":[8,11],"ticks":2},{"ids":[12,19],"ticks":4},{"ids":[4,8,13,20],"ticks":4},{"ids":[11,15,17,19],"ticks":4},{"ids":[4,16,20],"ticks":4},{"ids":[5],"ticks":4},{"ids":[9,16],"ticks":4},{"ids":[12,14],"ticks":4},{"ids":[14,16,19],"ticks":2},{"ids":[9,12],"ticks":2},{"ids":[16,19],"ticks":4},{"ids":[5,9,19,21],"ticks":4},{"ids":[12,14,16,19,21],"ticks":4},{"ids":[5,12,17,20],"ticks":4},{"ids":[8,12,14],"ticks":4},{"ids":[12,19],"ticks":4},{"ids":[12,15],"ticks":4},{"ids":[15,17,19],"ticks":2},{"ids":[8,12],"ticks":2},{"ids":[17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[5,8],"ticks":1},{"ids":[19],"ticks":2},{"ids":[15],"ticks":2},{"ids":[12,15,17,21],"ticks":2},{"ids":[15],"ticks":2},{"ids":[1,8,17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[8,10,12,14,19],"ticks":2},{"ids":[17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[8,12,21],"ticks":2},{"ids":[15,17,19],"ticks":2},{"ids":[16],"ticks":2},{"ids":[15],"ticks":2},{"ids":[10,21],"ticks":2},{"ids":[5,16],"ticks":4},{"ids":[10,17],"ticks":2},{"ids":[12],"ticks":2},{"ids":[15,19],"ticks":2},{"ids":[12],"ticks":2},{"ids":[8,20],"ticks":2},{"ids":[5],"ticks":2},{"ids":[4,17,19],"ticks":2},{"ids":[15],"ticks":2},{"ids":[8,15,20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[11,13,19,21],"ticks":4},{"ids":[15,17],"ticks":2},{"ids":[8,11],"ticks":2},{"ids":[17,20],"ticks":4},{"ids":[4,8,16,20],"ticks":4},{"ids":[11,15,17,19],"ticks":4},{"ids":[4,19,21],"ticks":4},{"ids":[5],"ticks":4},{"ids":[9,19],"ticks":2},{"ids":[17],"ticks":2},{"ids":[12,14,21],"ticks":2},{"ids":[19],"ticks":2},{"ids":[14,16,17],"ticks":2},{"ids":[9,12],"ticks":6},{"ids":[5,9],"ticks":4},{"ids":[12,14,16,17,20],"ticks":4},{"ids":[5,16,19],"ticks":4},{"ids":[6,17,21],"ticks":2},{"ids":[17],"ticks":2},{"ids":[10,16,20],"ticks":2},{"ids":[15],"ticks":2},{"ids":[13,15,17],"ticks":4},{"ids":[15,17],"ticks":2},{"ids":[10,13],"ticks":2},{"ids":[17,20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[6,10,15,17],"ticks":2},{"ids":[20],"ticks":2},{"ids":[12,15,17],"ticks":2},{"ids":[17],"ticks":2},{"ids":[6,16,19],"ticks":4},{"ids":[5],"ticks":4},{"ids":[9,17],"ticks":2},{"ids":[19],"ticks":2},{"ids":[12,14,21],"ticks":2},{"ids":[19],"ticks":2},{"ids":[14,16,19],"ticks":2},{"ids":[9,12],"ticks":2},{"ids":[6,13,17],"ticks":1},{"ids":[21],"ticks":2},{"ids":[12],"ticks":2},{"ids":[10,19],"ticks":4},{"ids":[14,18,20],"ticks":4},{"ids":[15,17,20],"ticks":2},{"ids":[19],"ticks":2},{"ids":[4,11,16,20],"ticks":4},{"ids":[13,18,20],"ticks":2},{"ids":[16],"ticks":2},{"ids":[4,11,16,20],"ticks":6},{"ids":[17],"ticks":2},{"ids":[5,12,16,21],"ticks":4},{"ids":[12,17,21],"ticks":4},{"ids":[19,21],"ticks":4},{"ids":[19,21],"ticks":2},{"ids":[5,12],"ticks":2},{"ids":[6,10,15,21],"ticks":4},{"ids":[14,16,21],"ticks":4},{"ids":[5,9,14,16],"ticks":4},{"ids":[13,15,20],"ticks":2},{"ids":[13],"ticks":2},{"ids":[4,8,11,15],"ticks":8},{"ids":[15,20],"ticks":4},{"ids":[20,21],"ticks":4},{"ids":[2,9,18,20],"ticks":2},{"ids":[15],"ticks":2},{"ids":[10,15,17],"ticks":2},{"ids":[20],"ticks":2},{"ids":[15,17,20],"ticks":4},{"ids":[13,15],"ticks":2},{"ids":[8,10],"ticks":2},{"ids":[3,10,19,21],"ticks":4},{"ids":[12,15,20],"ticks":4},{"ids":[12,15,19,20],"ticks":4},{"ids":[3,10],"ticks":4},{"ids":[6,16,19],"ticks":2},{"ids":[8],"ticks":2},{"ids":[9],"ticks":2},{"ids":[10,17,20],"ticks":2},{"ids":[13],"ticks":2},{"ids":[10],"ticks":2},{"ids":[9,20],"ticks":2},{"ids":[8],"ticks":2},{"ids":[9],"ticks":2},{"ids":[10],"ticks":2},{"ids":[12],"ticks":2},{"ids":[13],"ticks":2},{"ids":[5,12,15],"ticks":2},{"ids":[3,10],"ticks":2},{"ids":[2,9,16],"ticks":2},{"ids":[1,8],"ticks":2},{"ids":[4,17,20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[16,19],"ticks":2},{"ids":[4,8,16],"ticks":2},{"ids":[11,13,17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[13,15,16],"ticks":2},{"ids":[4,11,20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[20],"ticks":2},{"ids":[4,17],"ticks":2},{"ids":[20],"ticks":2},{"ids":[13,17,20],"ticks":2},{"ids":[11,17],"ticks":2},{"ids":[8,16,19],"ticks":2},{"ids":[4,16],"ticks":2},{"ids":[5,17],"ticks":2},{"ids":[21],"ticks":2},{"ids":[16],"ticks":2},{"ids":[5,17],"ticks":2},{"ids":[7,9,19],"ticks":2},{"ids":[21],"ticks":2},{"ids":[9,12,16],"ticks":2},{"ids":[14,16,19,21],"ticks":2},{"ids":[19],"ticks":2},{"ids":[21],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[19],"ticks":2},{"ids":[14,15,17],"ticks":2},{"ids":[12,17],"ticks":2},{"ids":[9,16,21],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[6,16,20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[6,10,15,19],"ticks":2},{"ids":[13,15,20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[15,17,20],"ticks":2},{"ids":[13,15],"ticks":2},{"ids":[6,15],"ticks":2},{"ids":[3,17],"ticks":2},{"ids":[6,16],"ticks":2},{"ids":[20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[13,19],"ticks":2},{"ids":[10,14,21],"ticks":2},{"ids":[6,19],"ticks":2},{"ids":[5,12],"ticks":2},{"ids":[9,12,14],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[9,19],"ticks":2},{"ids":[12,21],"ticks":2},{"ids":[19],"ticks":2},{"ids":[9,12,16],"ticks":2},{"ids":[12,14,16,19],"ticks":2},{"ids":[5,14],"ticks":2},{"ids":[5],"ticks":1},{"ids":[16],"ticks":2},{"ids":[16],"ticks":2},{"ids":[19],"ticks":2},{"ids":[14,16],"ticks":2},{"ids":[12,16],"ticks":2},{"ids":[2,9,15],"ticks":2},{"ids":[5,12],"ticks":2},{"ids":[3,16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[19],"ticks":2},{"ids":[7,16],"ticks":2},{"ids":[21],"ticks":2},{"ids":[9,14,19],"ticks":2},{"ids":[3,17],"ticks":2},{"ids":[21],"ticks":2},{"ids":[14],"ticks":2},{"ids":[12,17,19],"ticks":2},{"ids":[19],"ticks":2},{"ids":[12,17],"ticks":2},{"ids":[10],"ticks":2},{"ids":[7,17,21],"ticks":2},{"ids":[6,17],"ticks":2},{"ids":[6,21],"ticks":4},{"ids":[16,20],"ticks":1},{"ids":[10],"ticks":2},{"ids":[17],"ticks":2},{"ids":[13,17,20],"ticks":4},{"ids":[10,17,20],"ticks":2},{"ids":[6,20],"ticks":2},{"ids":[17],"ticks":4},{"ids":[10,17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[6,10,17],"ticks":2},{"ids":[20],"ticks":2},{"ids":[6,9,16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[9,16],"ticks":2},{"ids":[6,13],"ticks":2},{"ids":[2,15],"ticks":2},{"ids":[17],"ticks":2},{"ids":[6,15],"ticks":2},{"ids":[11,20],"ticks":2},{"ids":[6,15],"ticks":2},{"ids":[2,17],"ticks":2},{"ids":[15],"ticks":2},{"ids":[17],"ticks":2},{"ids":[9,19],"ticks":2},{"ids":[13,21],"ticks":2},{"ids":[17,18],"ticks":2},{"ids":[16,19],"ticks":2},{"ids":[13,17],"ticks":2},{"ids":[9,20],"ticks":2},{"ids":[5,15],"ticks":2},{"ids":[9,17],"ticks":2},{"ids":[12,20],"ticks":2},{"ids":[5,15],"ticks":2},{"ids":[9,17],"ticks":2},{"ids":[12,20],"ticks":2},{"ids":[13,19],"ticks":2},{"ids":[13,19],"ticks":2},{"ids":[12,16],"ticks":2},{"ids":[12,19],"ticks":2},{"ids":[10],"ticks":2},{"ids":[10],"ticks":2},{"ids":[5,12],"ticks":2},{"ids":[10],"ticks":2},{"ids":[5],"ticks":2},{"ids":[5],"ticks":2},{"ids":[4,8,13,15],"ticks":4},{"ids":[4,8,13,18,20],"ticks":4},{"ids":[11,12,13,17,19],"ticks":4},{"ids":[13,15],"ticks":2},{"ids":[4,11],"ticks":2},{"ids":[10,15,17],"ticks":4},{"ids":[4,13,18,20],"ticks":4},{"ids":[12,13,17,19],"ticks":2},{"ids":[11],"ticks":2},{"ids":[8,12,17,19],"ticks":2},{"ids":[4],"ticks":2},{"ids":[5,20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[5,9,20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[12,14,20],"ticks":2},{"ids":[20],"ticks":2},{"ids":[16,20,21],"ticks":2},{"ids":[12,14,16,20],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[7,16],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[16],"ticks":2},{"ids":[14,16],"ticks":2},{"ids":[12,16],"ticks":2},{"ids":[9,16],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[6,10,15,17],"ticks":4},{"ids":[6,9,14,16],"ticks":4},{"ids":[13,15,18,20],"ticks":4},{"ids":[17,20],"ticks":2},{"ids":[13,15],"ticks":2},{"ids":[6,10,15,17],"ticks":2},{"ids":[3],"ticks":2},{"ids":[6,8,13,15],"ticks":4},{"ids":[17],"ticks":2},{"ids":[13],"ticks":2},{"ids":[9,10,14,16],"ticks":2},{"ids":[6],"ticks":2},{"ids":[5,21],"ticks":2},{"ids":[21],"ticks":2},{"ids":[5,9,21],"ticks":2},{"ids":[21],"ticks":2},{"ids":[12,14,19,21],"ticks":2},{"ids":[21],"ticks":2},{"ids":[9,12,20],"ticks":2},{"ids":[14,16,19],"ticks":2},{"ids":[5,17],"ticks":2},{"ids":[7],"ticks":2},{"ids":[5,19],"ticks":4},{"ids":[14,20],"ticks":2},{"ids":[12],"ticks":2},{"ids":[2,9,15],"ticks":2},{"ids":[5],"ticks":2},{"ids":[4,16],"ticks":4},{"ids":[2,9,20],"ticks":4},{"ids":[4,11,16],"ticks":4},{"ids":[18],"ticks":2},{"ids":[16],"ticks":2},{"ids":[5,16],"ticks":2},{"ids":[14],"ticks":2},{"ids":[10,17],"ticks":2},{"ids":[12],"ticks":2},{"ids":[14],"ticks":4},{"ids":[7,21],"ticks":2},{"ids":[6],"ticks":2},{"ids":[6],"ticks":4},{"ids":[10,16],"ticks":2},{"ids":[13],"ticks":2},{"ids":[5],"ticks":4},{"ids":[9,15],"ticks":2},{"ids":[12],"ticks":2},{"ids":[4],"ticks":4},{"ids":[4],"ticks":4},{"ids":[4,15],"ticks":4},{"ids":[21],"ticks":4},{"ids":[2,20],"ticks":4},{"ids":[6,9,17],"ticks":4},{"ids":[9,13,15],"ticks":2},{"ids":[10],"ticks":2},{"ids":[8],"ticks":2},{"ids":[6],"ticks":2},{"ids":[3,21],"ticks":4},{"ids":[7,10,15],"ticks":4},{"ids":[10,12,15,17],"ticks":4},{"ids":[10],"ticks":2},{"ids":[8],"ticks":2},{"ids":[6,19],"ticks":2},{"ids":[10],"ticks":2},{"ids":[3,9,20],"ticks":2},{"ids":[10],"ticks":2},{"ids":[6,12,13,20],"ticks":2},{"ids":[10],"ticks":2},{"ids":[9,20],"ticks":2},{"ids":[10],"ticks":2},{"ids":[9,20],"ticks":2},{"ids":[10],"ticks":2},{"ids":[12],"ticks":2},{"ids":[10],"ticks":2},{"ids":[12],"ticks":2},{"ids":[10],"ticks":2},{"ids":[9],"ticks":2},{"ids":[10],"ticks":2},{"ids":[11,13,15,19],"ticks":2},{"ids":[20],"ticks":2},{"ids":[17],"ticks":2},{"ids":[16],"ticks":2},{"ids":[15],"ticks":4},{"ids":[11,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[11],"ticks":1},{"ids":[20],"ticks":2},{"ids":[20],"ticks":4},{"ids":[15],"ticks":2},{"ids":[20],"ticks":2},{"ids":[15],"ticks":2},{"ids":[16],"ticks":2},{"ids":[12,14,16,17],"ticks":2},{"ids":[19],"ticks":2},{"ids":[20],"ticks":2},{"ids":[17],"ticks":4},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[12,16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":1},{"ids":[16],"ticks":2},{"ids":[16],"ticks":1},{"ids":[12],"ticks":6},{"ids":[15,16],"ticks":2},{"ids":[16],"ticks":2},{"ids":[17],"ticks":2},{"ids":[19],"ticks":2},{"ids":[20],"ticks":4},{"ids":[13,20],"ticks":1},{"ids":[20],"ticks":1},{"ids":[14],"ticks":1},{"ids":[20],"ticks":1},{"ids":[17],"ticks":1},{"ids":[20],"ticks":1},{"ids":[20],"ticks":2},{"ids":[21],"ticks":2},{"ids":[20],"ticks":1}]"#;
+
+fn qietingfengyin_notes() -> Vec<NoteEvent> {
+    serde_json::from_str(QTFY_JSON).unwrap_or_default()
+}
+
+/// 内置预设曲目《且听风吟》
+fn qietingfengyin_song() -> Song {
+    Song {
+        name: "且听风吟".into(),
+        bpm: 147,
+        beats_per_measure: 4,
+        notes: qietingfengyin_notes(),
     }
 }
 
@@ -82,6 +113,8 @@ struct RawStore {
     songs: Vec<RawSong>,
     current: usize,
     countdown: u32,
+    #[serde(default)]
+    version: u32,
 }
 #[derive(Deserialize)]
 struct RawSong {
@@ -133,7 +166,20 @@ fn raw_to_store(raw: RawStore) -> Store {
             .collect(),
         current: raw.current,
         countdown: raw.countdown,
+        version: raw.version,
     }
+}
+
+/// 启动时迁移：按数据版本递增补入新增预设曲目（幂等，按曲名去重）
+fn migrate_store(mut s: Store) -> Store {
+    if s.version < 2 {
+        // v2：加入内置预设《且听风吟》
+        if !s.songs.iter().any(|x| x.name == "且听风吟") {
+            s.songs.push(qietingfengyin_song());
+        }
+        s.version = 2;
+    }
+    s
 }
 
 /// 校验并规整数据，防止前端传入越界值
@@ -165,6 +211,7 @@ fn sanitize(mut s: Store) -> Store {
     }
     s.current = s.current.min(s.songs.len() - 1);
     s.countdown = s.countdown.min(60);
+    s.version = STORE_VERSION;
     s
 }
 
@@ -180,7 +227,7 @@ fn load_store(app: &AppHandle) -> Store {
         .and_then(|b| serde_json::from_slice::<RawStore>(&b).ok())
         .map(raw_to_store)
         .unwrap_or_default();
-    sanitize(store)
+    sanitize(migrate_store(store))
 }
 
 fn persist(app: &AppHandle, store: &Store) {
@@ -475,6 +522,7 @@ mod tests {
             }],
             current: 0,
             countdown: 3,
+            version: 0,
         };
         let store = raw_to_store(raw);
         let song = &store.songs[0];
@@ -499,6 +547,7 @@ mod tests {
             }],
             current: 0,
             countdown: 999,
+            version: 0,
         });
         let s = &store.songs[0];
         assert_eq!(s.bpm, 600);
@@ -506,6 +555,45 @@ mod tests {
         assert_eq!(s.notes[0].ids, vec![1, 2], "越界音符过滤 + 去重");
         assert_eq!(s.notes[0].ticks, 64);
         assert_eq!(store.countdown, 60);
+    }
+
+    #[test]
+    fn qietingfengyin_parses() {
+        let notes = qietingfengyin_notes();
+        assert!(notes.len() > 1000, "且听风吟应有 1000+ 音符，实际 {}", notes.len());
+        assert!(notes.iter().all(|n| !n.ids.is_empty()), "不应有空和弦（休止）");
+        assert!(notes.iter().all(|n| n.ids.iter().all(|&id| (1..=21).contains(&id))));
+        assert!(notes.iter().all(|n| (1..=64).contains(&n.ticks)));
+        // 默认 store 应含两首曲目
+        let store = Store::default();
+        assert_eq!(store.songs.len(), 2);
+        assert_eq!(store.songs[1].name, "且听风吟");
+        assert_eq!(store.songs[1].bpm, 147);
+        assert_eq!(store.version, STORE_VERSION);
+    }
+
+    #[test]
+    fn migrate_adds_missing_preset_once() {
+        // 旧版（version 0，仅一首）→ 迁移补入《且听风吟》
+        let old = Store {
+            songs: vec![Song {
+                name: "远航星的告别".into(),
+                bpm: 320,
+                beats_per_measure: 4,
+                notes: vec![NoteEvent { ids: vec![3], ticks: 4 }],
+            }],
+            current: 0,
+            countdown: 3,
+            version: 0,
+        };
+        let migrated = migrate_store(old);
+        assert_eq!(migrated.songs.len(), 2, "迁移后应有两首");
+        assert_eq!(migrated.songs[1].name, "且听风吟");
+        assert_eq!(migrated.version, 2);
+
+        // 幂等：version 已是最新，再次迁移不应重复
+        let again = migrate_store(migrated);
+        assert_eq!(again.songs.len(), 2, "迁移应幂等，不重复补入");
     }
 }
 
