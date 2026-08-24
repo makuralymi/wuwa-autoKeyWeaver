@@ -382,6 +382,16 @@ fn focus_game() -> bool {
     game::focus_game()
 }
 
+/// 单键注入测试：在游戏本体界面实测哪种注入方式有效。
+/// mode: "scan"（纯扫描码）/ "vk"（虚拟键码）/ "scaned"（扫描码+扩展键）
+/// 系统层面注入始终成功，需在游戏内观察是否有声音来判断哪种方式被接受
+#[tauri::command]
+fn test_key(mode: String, ch: String) -> bool {
+    let c = ch.chars().next().unwrap_or('a');
+    keyboard::test_inject(&mode, c);
+    true
+}
+
 /* ================= 系统托盘与退出 ================= */
 
 /// 持有托盘图标，防止其被析构后从系统托盘消失（字段无需读取）
@@ -597,12 +607,170 @@ mod tests {
     }
 }
 
+/// 当前进程是否以管理员（高完整性）运行。
+/// 鸣潮以管理员权限运行，普通权限进程的 SendInput 会被 Windows UIPI
+/// 拦截，无法注入按键到游戏窗口，因此需要管理员权限。
+#[cfg(windows)]
+fn is_admin() -> bool {
+    use winapi::shared::minwindef::DWORD;
+    use winapi::shared::ntdef::HANDLE;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::{GetCurrentProcess, OpenProcessToken};
+    use winapi::um::securitybaseapi::GetTokenInformation;
+    use winapi::um::winnt::{TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+
+    unsafe {
+        let mut tok: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut tok) == 0 {
+            return false;
+        }
+        let mut elev: TOKEN_ELEVATION = std::mem::zeroed();
+        let mut size: DWORD = 0;
+        let ok = GetTokenInformation(
+            tok,
+            TokenElevation,
+            &mut elev as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut size,
+        );
+        CloseHandle(tok);
+        ok != 0 && elev.TokenIsElevated != 0
+    }
+}
+
+/// 通过 UAC 以管理员权限重新启动自身；返回是否成功触发提升
+#[cfg(windows)]
+fn relaunch_as_admin() -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::shellapi::ShellExecuteW;
+    use winapi::um::winuser::SW_SHOWNORMAL;
+
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let exe_w: Vec<u16> = exe.as_os_str().encode_wide().chain(Some(0)).collect();
+    let params: Vec<u16> = std::env::args()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let dir_w: Vec<u16> = std::env::current_dir()
+        .unwrap_or_default()
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let runas: Vec<u16> = OsStr::new("runas").encode_wide().chain(Some(0)).collect();
+
+    let r = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            runas.as_ptr(),
+            exe_w.as_ptr(),
+            if params.is_empty() { std::ptr::null() } else { params.as_ptr() },
+            dir_w.as_ptr(),
+            SW_SHOWNORMAL,
+        )
+    };
+    r as isize > 32 // >32 表示成功启动
+}
+
+#[cfg(not(windows))]
+fn is_admin() -> bool {
+    true
+}
+#[cfg(not(windows))]
+fn relaunch_as_admin() -> bool {
+    true
+}
+
+/// 是否以管理员身份运行（前端用于提示按键注入可用性）
+#[tauri::command]
+fn app_elevated() -> bool {
+    is_admin()
+}
+
+/// 标记文件：管理员实例写入自己的 PID，普通实例据此检测管理员实例已启动
+fn elevated_marker() -> std::path::PathBuf {
+    std::env::temp_dir().join("wuwa-music-elevated.lock")
+}
+
+/// 进程是否存活
+#[cfg(windows)]
+fn process_alive(pid: u32) -> bool {
+    use winapi::um::processthreadsapi::OpenProcess;
+    let h = unsafe { OpenProcess(0x1000, 0, pid) }; // PROCESS_QUERY_LIMITED_INFORMATION
+    if h.is_null() {
+        return false;
+    }
+    unsafe { winapi::um::handleapi::CloseHandle(h) };
+    true
+}
+#[cfg(not(windows))]
+fn process_alive(_pid: u32) -> bool {
+    false
+}
+
+fn write_elevated_marker() {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::File::create(elevated_marker()) {
+        let _ = writeln!(f, "{}", std::process::id());
+    }
+}
+
+/// 轮询等待新的管理员实例出现（用户点「是」后它会写标记文件）
+fn wait_for_elevated_sibling(timeout: std::time::Duration) -> bool {
+    let self_pid = std::process::id();
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(content) = std::fs::read_to_string(elevated_marker()) {
+            if let Ok(pid) = content.trim().parse::<u32>() {
+                if pid != self_pid && process_alive(pid) {
+                    return true;
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(120));
+    }
+    false
+}
+
+/// 当前是否有已启动的管理员实例（供 setup 阶段晚到的普通实例退出）
+fn elevated_sibling_running() -> bool {
+    let self_pid = std::process::id();
+    match std::fs::read_to_string(elevated_marker()) {
+        Ok(content) => match content.trim().parse::<u32>() {
+            Ok(pid) => pid != self_pid && process_alive(pid),
+            Err(_) => false,
+        },
+        Err(_) => false,
+    }
+}
+
 fn main() {
+    if is_admin() {
+        // 管理员实例：写标记，供普通实例检测到后自行退出，避免双实例并存
+        write_elevated_marker();
+    } else if relaunch_as_admin() {
+        // 已触发 UAC：等待新的管理员实例出现（用户点「是」）；超时则继续以普通权限运行
+        if wait_for_elevated_sibling(std::time::Duration::from_secs(6)) {
+            return;
+        }
+    }
+
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();
             app.manage(AppStore(Mutex::new(load_store(&handle))));
             setup_tray(app)?;
+            // 若管理员实例已在运行（例如 UAC 确认较晚），本普通实例退出，避免并存
+            if !is_admin() && elevated_sibling_running() {
+                app.handle().exit(0);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -616,7 +784,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_store, save_store, select_song, play_current, pause_score, stop_score,
-            game_running, focus_game, exit_app, minimize_to_tray
+            game_running, focus_game, exit_app, minimize_to_tray, test_key, app_elevated
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

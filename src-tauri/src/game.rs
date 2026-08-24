@@ -272,6 +272,48 @@ mod imp {
                 }
             }
         }
+
+        /// 针对当前正在运行的鸣潮进程做实时诊断（需先启动游戏）。
+        /// 验证：进程检测、窗口查找、带到前台、前台守卫、SendInput 系统级按键。
+        /// 手动运行：`cargo test --release -- --ignored debug_live_game`
+        #[test]
+        #[ignore]
+        fn debug_live_game_key_injection() {
+            use crate::keyboard;
+            use winapi::um::winuser::GetAsyncKeyState;
+
+            println!("\n=== 实时游戏按键注入诊断 ===");
+            println!("game_running: {}", game_running());
+
+            let game_pid = GAME_PROCESSES.iter().find_map(|&n| find_pid(n));
+            match game_pid {
+                None => println!("未检测到游戏进程（Wuthering Waves.exe / Client-Win64-Shipping.exe）"),
+                Some(pid) => {
+                    println!("游戏 PID: {}", pid);
+                    if let Some(hwnd) = find_window(pid) {
+                        println!("游戏可见窗口: {:?}", hwnd);
+                    } else {
+                        println!("游戏无可见窗口！");
+                    }
+                }
+            }
+
+            println!("调用 focus_game(): {}", focus_game());
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            println!("focus 后 game_in_foreground(): {}", game_in_foreground());
+
+            // 系统级按键验证：发送 A 键，用 GetAsyncKeyState 确认系统状态
+            println!("\n-- SendInput 系统级验证 --");
+            keyboard::press('a');
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            let s = unsafe { GetAsyncKeyState('A' as i32) };
+            println!("按 A 后 GetAsyncKeyState=0x{:X} (bit15 按下={})", s, (s as u16 & 0x8000) != 0);
+            keyboard::release('a');
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            let s2 = unsafe { GetAsyncKeyState('A' as i32) };
+            println!("松 A 后 GetAsyncKeyState=0x{:X} (bit15 按下={})", s2, (s2 as u16 & 0x8000) != 0);
+            println!("=== 诊断结束 ===\n");
+        }
     }
 }
 

@@ -306,11 +306,22 @@ function clearHighlight() {
 async function play() {
   try {
     setPlaying(true);
-    if (WM.isTauri && (await WM.api.gameRunning())) {
-      const ok = await WM.api.focusGame();
-      setStatus(ok ? "检测到游戏进程，已切换过去" : "游戏运行中，请手动切换到游戏窗口");
+    if (WM.isTauri) {
+      const [elevated, running] = await Promise.all([WM.api.appElevated(), WM.api.gameRunning()]);
+      if (running && !elevated) {
+        // 游戏以管理员运行，而本应用是普通权限：UIPI 会拦截注入，提示用户
+        setPlaying(false);
+        setStatus("检测到游戏运行，但本应用非管理员权限，按键无法注入游戏。请用管理员身份重新启动本应用", true);
+        return;
+      }
+      if (running) {
+        const ok = await WM.api.focusGame();
+        setStatus(ok ? "检测到游戏进程，已切换过去" : "游戏运行中，请手动切换到游戏窗口");
+      } else {
+        setStatus("倒计时…请切换到目标游戏窗口");
+      }
     } else {
-      setStatus(WM.isTauri ? "倒计时…请切换到目标游戏窗口" : "预览模式：仅高亮不模拟按键");
+      setStatus("预览模式：仅高亮不模拟按键");
     }
     await WM.api.playCurrent();
   } catch (err) {
@@ -517,8 +528,12 @@ async function updateGameIndicator() {
     return;
   }
   try {
-    const running = await WM.api.gameRunning();
-    setGameIndicator(running ? "on" : "off", running ? "游戏运行中" : "未检测到游戏");
+    const [running, elevated] = await Promise.all([WM.api.gameRunning(), WM.api.appElevated()]);
+    if (running && !elevated) {
+      setGameIndicator("warn", "游戏运行中·需管理员");
+    } else {
+      setGameIndicator(running ? "on" : "off", running ? "游戏运行中" : "未检测到游戏");
+    }
   } catch {
     setGameIndicator("off", "检测失败");
   }

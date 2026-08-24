@@ -51,6 +51,11 @@ header h1 { font-size: 20px; margin: 0; }
   border-color: rgba(143, 227, 160, 0.45);
   background: rgba(143, 227, 160, 0.1);
 }
+.game-indicator.warn {
+  color: var(--playing);
+  border-color: rgba(255, 209, 102, 0.45);
+  background: rgba(255, 209, 102, 0.1);
+}
 .game-indicator.off { color: var(--text-dim); }
 
 main {

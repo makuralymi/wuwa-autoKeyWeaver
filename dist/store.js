@@ -279,6 +279,7 @@ const WM = (() => {
         stop: () => tauri.core.invoke("stop_score"),
         gameRunning: () => tauri.core.invoke("game_running"),
         focusGame: () => tauri.core.invoke("focus_game"),
+        appElevated: () => tauri.core.invoke("app_elevated"),
         exitApp: () => tauri.core.invoke("exit_app"),
         minimizeToTray: () => tauri.core.invoke("minimize_to_tray"),
         showOverlay: () => tauri.window.getByLabel("overlay")?.show(),
@@ -307,6 +308,7 @@ const WM = (() => {
         showOverlay: async () =>
           window.open("overlay.html", "wm-overlay", "width=310,height=220"),
         hideOverlay: async () => window.close(),
+        appElevated: async () => true,
         exitApp: async () => {},
         minimizeToTray: async () => {},
       };
