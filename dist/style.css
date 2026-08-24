@@ -35,6 +35,23 @@ header {
 header h1 { font-size: 20px; margin: 0; }
 .status { font-size: 13px; color: var(--text-dim); }
 .status.warn { color: var(--playing); }
+/* 游戏进程检测指示器 */
+.game-indicator {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--cell);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+.game-indicator.on {
+  color: #8fe3a0;
+  border-color: rgba(143, 227, 160, 0.45);
+  background: rgba(143, 227, 160, 0.1);
+}
+.game-indicator.off { color: var(--text-dim); }
 
 main {
   flex: 1;
@@ -317,3 +334,26 @@ footer {
   text-align: center;
 }
 footer b { color: var(--text); font-weight: 600; }
+
+/* ---------- 退出确认弹窗 ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal.hidden { display: none; }
+.modal-box {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  min-width: 320px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.modal-title { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+.modal-text { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.6; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }

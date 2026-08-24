@@ -171,6 +171,7 @@ function setStatus(text, warn = false) {
 function setPlaying(on) {
   playing = on;
   $("btn-play").disabled = on;
+  $("btn-preview").disabled = on;
   $("btn-stop").disabled = !on;
   setEditingEnabled(!on);
   if (!on) clearHighlight();
@@ -225,7 +226,54 @@ async function play() {
 }
 
 async function stop() {
-  await WM.api.stop();
+  previewAborted = true; // 终止前端试听
+  await WM.api.stop(); // 终止真实播放（Rust）
+}
+
+/* ============ 试听（音频预览） ============ */
+
+let previewAborted = false;
+let previewActive = false;
+
+async function preview() {
+  if (playing) return;
+  previewAborted = false;
+  setPlaying(true);
+  previewActive = true;
+  setStatus("加载采样…");
+  try {
+    await AUDIO.ensureLoaded();
+  } catch {
+    /* 采样加载失败则全部走振荡器兜底 */
+  }
+  if (!previewActive || previewAborted) {
+    // 加载期间被停止，或被真实播放顶替
+    if (previewActive) {
+      previewActive = false;
+      setPlaying(false);
+      setStatus("已停止");
+    }
+    return;
+  }
+  setStatus("试听中…");
+  const song = cur();
+  const beat = 60000 / Math.max(20, Math.min(600, song.bpm));
+  for (let i = 0; i < song.notes.length; i++) {
+    if (!previewActive || previewAborted) break;
+    highlightBeat(i);
+    AUDIO.playChord(song.notes[i]);
+    const start = performance.now();
+    while (performance.now() - start < beat) {
+      if (!previewActive || previewAborted) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
+  AUDIO.stopAll();
+  if (previewActive) {
+    previewActive = false;
+    setPlaying(false);
+    setStatus(previewAborted ? "已停止" : "试听结束");
+  }
 }
 
 /* ============ 导入导出（针对当前谱面，兼容旧版单音格式） ============ */
@@ -308,11 +356,22 @@ document.addEventListener("keydown", (e) => {
 /* ============ 事件与初始化 ============ */
 
 WM.on("countdown", (n) => {
+  if (previewActive) {
+    // 真实播放（可能由悬浮窗发起）开始，终止试听并移交播放权
+    previewAborted = true;
+    AUDIO.stopAll();
+    previewActive = false;
+  }
   if (!playing) setPlaying(true); // 悬浮窗等其他窗口发起的播放，同样禁用编辑
   if (n > 0) setStatus(`倒计时 ${n} 秒…`);
   else setStatus("正在播放…");
 });
 WM.on("play-progress", (i) => {
+  if (previewActive) {
+    previewAborted = true;
+    AUDIO.stopAll();
+    previewActive = false;
+  }
   if (!playing) setPlaying(true);
   highlightBeat(i);
 });
@@ -326,8 +385,49 @@ WM.on("store-updated", (s) => {
   renderAll();
 });
 
+/* ============ 退出确认（完全退出 / 最小化到托盘） ============ */
+
+WM.on("exit-request", () => {
+  $("exit-modal").classList.remove("hidden");
+});
+
+function hideExitModal() {
+  $("exit-modal").classList.add("hidden");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("exit-modal").classList.contains("hidden")) {
+    hideExitModal();
+  }
+});
+
+/* ============ 游戏进程指示 ============ */
+
+const GAME_POLL_MS = 3000;
+
+function setGameIndicator(state, text) {
+  const el = $("game-indicator");
+  if (!el) return;
+  el.className = "game-indicator" + (state ? ` ${state}` : "");
+  el.textContent = `🎮 ${text}`;
+}
+
+async function updateGameIndicator() {
+  if (!WM.isTauri) {
+    setGameIndicator("off", "浏览器预览");
+    return;
+  }
+  try {
+    const running = await WM.api.gameRunning();
+    setGameIndicator(running ? "on" : "off", running ? "游戏运行中" : "未检测到游戏");
+  } catch {
+    setGameIndicator("off", "检测失败");
+  }
+}
+
 function bindToolbar() {
   $("btn-play").addEventListener("click", play);
+  $("btn-preview").addEventListener("click", preview);
   $("btn-stop").addEventListener("click", stop);
   $("btn-overlay").addEventListener("click", () => WM.api.showOverlay());
   $("apply-beats").addEventListener("click", () => setBeats(parseInt($("beats-input").value, 10)));
@@ -350,6 +450,15 @@ function bindToolbar() {
     if (e.target.files[0]) importSong(e.target.files[0]);
     e.target.value = "";
   });
+  $("btn-exit-full").addEventListener("click", async () => {
+    hideExitModal();
+    await WM.api.exitApp();
+  });
+  $("btn-exit-tray").addEventListener("click", async () => {
+    hideExitModal();
+    await WM.api.minimizeToTray();
+  });
+  $("btn-exit-cancel").addEventListener("click", hideExitModal);
 }
 
 (async () => {
@@ -357,5 +466,7 @@ function bindToolbar() {
   bindToolbar();
   store = await WM.api.getStore();
   renderAll();
+  updateGameIndicator(); // 立即检测一次
+  setInterval(updateGameIndicator, GAME_POLL_MS); // 周期性刷新（游戏前后台切换）
   if (!WM.isTauri) setStatus("预览模式（浏览器）：编辑可用，播放仅高亮不模拟按键", true);
 })();

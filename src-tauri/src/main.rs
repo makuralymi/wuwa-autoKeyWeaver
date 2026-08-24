@@ -9,12 +9,16 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// 播放代数：每次开始/停止播放 +1，播放线程通过比对代数判断是否应退出
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// 暂停标志
 static PAUSED: AtomicBool = AtomicBool::new(false);
+/// 完全退出标志：置位后不再拦截主窗口关闭（供「完全退出」路径使用）
+static EXITING: AtomicBool = AtomicBool::new(false);
 
 const MAX_BEATS: usize = 1024;
 const MAX_CHORD: usize = 8;
@@ -290,6 +294,77 @@ fn focus_game() -> bool {
     game::focus_game()
 }
 
+/* ================= 系统托盘与退出 ================= */
+
+/// 持有托盘图标，防止其被析构后从系统托盘消失（字段无需读取）
+#[allow(dead_code)]
+struct TrayState(tauri::tray::TrayIcon);
+
+/// 完全退出：先标记 EXITING，避免被窗口关闭拦截器拦下
+fn request_exit(app: &AppHandle) {
+    EXITING.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
+/// 显示并聚焦主窗口（托盘恢复用）
+fn show_main_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "完全退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .unwrap_or_else(|| tauri::include_image!("icons/icon.png"));
+
+    let tray = TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_main_window(app),
+            "quit" => request_exit(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // 左键单击托盘图标 → 恢复主窗口
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app.handle())?;
+
+    app.manage(TrayState(tray));
+    Ok(())
+}
+
+/// 完全退出应用（前端退出确认弹窗调用）
+#[tauri::command]
+fn exit_app(app: AppHandle) {
+    request_exit(&app);
+}
+
+/// 隐藏主窗口到系统托盘（前端退出确认弹窗调用）
+#[tauri::command]
+fn minimize_to_tray(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+}
+
 fn stop_playback() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
     PAUSED.store(false, Ordering::SeqCst);
@@ -334,11 +409,21 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             app.manage(AppStore(Mutex::new(load_store(&handle))));
+            setup_tray(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 主窗口关闭时拦截，弹出退出确认（完全退出 / 最小化到托盘）
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && !EXITING.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.emit("exit-request", ());
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_store, save_store, select_song, play_current, pause_score, stop_score,
-            game_running, focus_game
+            game_running, focus_game, exit_app, minimize_to_tray
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

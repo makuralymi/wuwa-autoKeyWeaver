@@ -10,6 +10,7 @@
   <header>
     <h1>🎵 曲谱编辑器</h1>
     <span id="status" class="status"></span>
+    <span id="game-indicator" class="game-indicator" title="检测鸣潮游戏进程">🎮 检测中…</span>
   </header>
 
   <main>
@@ -32,6 +33,7 @@
       <div class="spacer"></div>
       <button id="btn-overlay" class="btn">🪟 悬浮窗</button>
       <button id="btn-play" class="btn primary">▶ 播放</button>
+      <button id="btn-preview" class="btn">🎧 试听</button>
       <button id="btn-stop" class="btn danger" disabled>■ 停止</button>
       <div class="sep"></div>
       <button id="btn-export" class="btn">导出</button>
@@ -60,7 +62,21 @@
     （键盘字母区每排从左到右 7 键）
   </footer>
 
+  <!-- 退出确认弹窗（Tauri 模式关闭主窗口时显示） -->
+  <div id="exit-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-title">退出应用</div>
+      <div class="modal-text">退出后将结束全部进程；也可以最小化到系统托盘继续运行。</div>
+      <div class="modal-actions">
+        <button id="btn-exit-full" class="btn danger">完全退出</button>
+        <button id="btn-exit-tray" class="btn">最小化到托盘</button>
+        <button id="btn-exit-cancel" class="btn">取消</button>
+      </div>
+    </div>
+  </div>
+
   <script src="store.js"></script>
+  <script src="audio.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
