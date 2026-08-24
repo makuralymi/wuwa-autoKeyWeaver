@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>曲谱编辑器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🎵 曲谱编辑器</h1>
+    <span id="status" class="status"></span>
+  </header>
+
+  <main>
+    <!-- 工具栏 -->
+    <section class="panel toolbar">
+      <label class="field">
+        <span>拍数</span>
+        <input id="beats-input" type="number" min="1" max="1024" value="32" />
+        <button id="apply-beats" class="btn small">应用</button>
+      </label>
+      <label class="field">
+        <span>速度 BPM</span>
+        <input id="bpm-input" type="number" min="20" max="600" value="120" />
+      </label>
+      <label class="field">
+        <span>倒计时</span>
+        <input id="countdown-input" type="number" min="0" max="60" value="3" />
+        <span>秒</span>
+      </label>
+      <div class="spacer"></div>
+      <button id="btn-overlay" class="btn">🪟 悬浮窗</button>
+      <button id="btn-play" class="btn primary">▶ 播放</button>
+      <button id="btn-stop" class="btn danger" disabled>■ 停止</button>
+      <div class="sep"></div>
+      <button id="btn-export" class="btn">导出</button>
+      <button id="btn-import" class="btn">导入</button>
+      <input id="import-file" type="file" accept=".json,application/json" hidden />
+    </section>
+
+    <!-- 音符面板（按键映射） -->
+    <section class="panel palette">
+      <div class="palette-hint">点击下方音符为选中拍添加/移除该音（可组成和弦，如括号记谱），也可直接按键盘对应字母键</div>
+      <div class="palette-grid" id="palette"></div>
+    </section>
+
+    <!-- 谱面切换 + 曲谱网格 -->
+    <section class="panel score">
+      <div id="song-tabs" class="song-tabs"></div>
+      <div class="score-hint">
+        单击拍格选中 · ←/→ 移动选中 · Delete 清除当前拍 · 空格/0 清空并前进
+      </div>
+      <div id="score-grid" class="score-grid"></div>
+    </section>
+  </main>
+
+  <footer>
+    按键映射：低八度 <b>Z X C V B N M</b> · 中八度 <b>A S D F G H J</b> · 高八度 <b>Q W E R T Y U</b>
+    （键盘字母区每排从左到右 7 键）
+  </footer>
+
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

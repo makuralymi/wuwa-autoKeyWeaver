@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>悬浮控制</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="overlay">
+  <div class="ov-wrap">
+    <header class="ov-head" data-tauri-drag-region>
+      <span id="ov-name" class="ov-name">--</span>
+      <button id="ov-close" class="ov-close" title="隐藏悬浮窗">✕</button>
+    </header>
+
+    <div id="ov-status" class="ov-status">就绪</div>
+
+    <div class="ov-row">
+      <button id="ov-play" class="ov-btn primary">▶ 开始</button>
+      <button id="ov-pause" class="ov-btn" disabled>⏸ 暂停</button>
+      <button id="ov-stop" class="ov-btn danger" disabled>■ 结束</button>
+    </div>
+
+    <div class="ov-row">
+      <button id="ov-prev" class="ov-btn" title="上一个谱面">◀</button>
+      <span id="ov-idx" class="ov-idx">1/1</span>
+      <button id="ov-next" class="ov-btn" title="下一个谱面">▶</button>
+      <span class="ov-spacer"></span>
+      <span class="ov-cd-label">倒计时</span>
+      <button id="ov-cd-minus" class="ov-btn small">−</button>
+      <span id="ov-cd" class="ov-cd">3s</span>
+      <button id="ov-cd-plus" class="ov-btn small">＋</button>
+    </div>
+  </div>
+
+  <script src="store.js"></script>
+  <script src="overlay.js"></script>
+</body>
+</html>
