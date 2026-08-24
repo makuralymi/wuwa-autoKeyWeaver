@@ -6,7 +6,7 @@ mod keyboard;
 
 use chart::{note_to_char, parse_chart, DEFAULT_SONG_TEXT};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
@@ -19,6 +19,10 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 static PAUSED: AtomicBool = AtomicBool::new(false);
 /// 完全退出标志：置位后不再拦截主窗口关闭（供「完全退出」路径使用）
 static EXITING: AtomicBool = AtomicBool::new(false);
+/// 演奏阶段是否启用「仅游戏内发送按键」守卫（倒计时/暂停时关闭）
+static GAME_GUARD: AtomicBool = AtomicBool::new(false);
+/// 播放停止原因：0=正常/用户停止，1=切屏（游戏失焦自动停止）
+static STOP_REASON: AtomicU32 = AtomicU32::new(0);
 
 const MAX_BEATS: usize = 1024;
 const MAX_CHORD: usize = 8;
@@ -212,20 +216,23 @@ fn play_current(state: State<'_, AppStore>, app: AppHandle) -> Result<(), String
         while secs > 0 {
             let _ = app.emit("countdown", secs);
             if !wait(Duration::from_secs(1), &mut Vec::new(), gen) {
-                let _ = app.emit("play-end", ());
+                let _ = app.emit("play-end", 0u32);
                 return;
             }
             secs -= 1;
             if stopped() {
-                let _ = app.emit("play-end", ());
+                let _ = app.emit("play-end", 0u32);
                 return;
             }
         }
         let _ = app.emit("countdown", 0u32);
         if stopped() {
-            let _ = app.emit("play-end", ());
+            let _ = app.emit("play-end", 0u32);
             return;
         }
+
+        // 演奏阶段：启用「仅游戏内发送按键」守卫（切屏自动停止，倒计时阶段不启用）
+        GAME_GUARD.store(true, Ordering::SeqCst);
 
         // 演奏阶段：每拍按下和弦全部按键，拍尾松开
         let beat = Duration::from_millis(60_000 / u64::from(song.bpm));
@@ -264,7 +271,11 @@ fn play_current(state: State<'_, AppStore>, app: AppHandle) -> Result<(), String
         for &ch in &held {
             keyboard::release(ch);
         }
-        let _ = app.emit("play-end", ());
+        let reason = STOP_REASON.swap(0, Ordering::SeqCst);
+        if GENERATION.load(Ordering::SeqCst) == gen {
+            GAME_GUARD.store(false, Ordering::SeqCst);
+        }
+        let _ = app.emit("play-end", reason);
     });
 
     Ok(())
@@ -375,6 +386,8 @@ fn stop_playback() {
 /// 返回 false 表示播放已被停止，调用方应退出
 fn wait(mut remain: Duration, held: &mut Vec<char>, gen: u64) -> bool {
     let mut paused_held: Option<Vec<char>> = None;
+    // 前台守卫约每 100ms 检查一次（10ms 轮询 × 10）
+    let mut guard_tick: u8 = 0;
     loop {
         if GENERATION.load(Ordering::SeqCst) != gen {
             return false;
@@ -394,6 +407,15 @@ fn wait(mut remain: Duration, held: &mut Vec<char>, gen: u64) -> bool {
                 keyboard::press(ch);
             }
             *held = chs;
+        }
+        // 切屏自动停止：演奏阶段若游戏失焦（且游戏在运行）则停止发送按键
+        guard_tick = guard_tick.wrapping_add(1);
+        if guard_tick % 10 == 0
+            && GAME_GUARD.load(Ordering::SeqCst)
+            && !game::game_in_foreground()
+        {
+            STOP_REASON.store(1, Ordering::SeqCst);
+            return false;
         }
         if remain.is_zero() {
             return true;

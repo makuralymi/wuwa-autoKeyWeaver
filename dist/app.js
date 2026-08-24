@@ -196,12 +196,13 @@ function setEditingEnabled(enabled) {
   $("song-tabs").classList.toggle("locked", !enabled);
 }
 
-function highlightBeat(i) {
+function highlightBeat(i, scroll = true) {
   document.querySelectorAll(".cell.playing").forEach((el) => el.classList.remove("playing"));
   const cell = document.querySelector(`.cell[data-index="${i}"]`);
   if (cell) {
     cell.classList.add("playing");
-    cell.scrollIntoView({ block: "nearest" });
+    // 试听时不强制滚动到当前拍，避免画面跟随跳动；真实播放保持跟随
+    if (scroll) cell.scrollIntoView({ block: "nearest" });
   }
 }
 
@@ -260,7 +261,7 @@ async function preview() {
   const beat = 60000 / Math.max(20, Math.min(600, song.bpm));
   for (let i = 0; i < song.notes.length; i++) {
     if (!previewActive || previewAborted) break;
-    highlightBeat(i);
+    highlightBeat(i, false); // 试听不强制滚动到当前拍
     AUDIO.playChord(song.notes[i]);
     const start = performance.now();
     while (performance.now() - start < beat) {
@@ -375,9 +376,9 @@ WM.on("play-progress", (i) => {
   if (!playing) setPlaying(true);
   highlightBeat(i);
 });
-WM.on("play-end", () => {
+WM.on("play-end", (r) => {
   setPlaying(false);
-  setStatus("播放结束");
+  setStatus(r === 1 ? "已切屏，播放已停止" : "播放结束");
 });
 // 悬浮窗等其他窗口的修改实时同步
 WM.on("store-updated", (s) => {
