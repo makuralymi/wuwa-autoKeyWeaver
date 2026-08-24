@@ -17,9 +17,9 @@
     <!-- 工具栏 -->
     <section class="panel toolbar">
       <label class="field">
-        <span>拍数</span>
-        <input id="beats-input" type="number" min="1" max="1024" value="32" />
-        <button id="apply-beats" class="btn small">应用</button>
+        <span>每小节拍数</span>
+        <input id="measure-input" type="number" min="1" max="16" value="4" />
+        <button id="apply-measure" class="btn small">应用</button>
       </label>
       <label class="field">
         <span>速度 BPM</span>
@@ -50,8 +50,15 @@
     <!-- 谱面切换 + 曲谱网格 -->
     <section class="panel score">
       <div id="song-tabs" class="song-tabs"></div>
+      <div class="score-tools">
+        <div id="duration-bar" class="duration-bar"></div>
+        <div class="spacer"></div>
+        <span class="total-beats">共 <b id="total-beats">0</b> 拍</span>
+        <button id="btn-add-note" class="btn small">＋ 音符</button>
+        <button id="btn-del-note" class="btn small danger">－ 删除</button>
+      </div>
       <div class="score-hint">
-        单击拍格选中 · ←/→ 移动选中 · Delete 清除当前拍 · 空格/0 清空并前进
+        点格子选中 · 字母键/音符面板填音 · 选「时长」设置时值 · ←/→ 移动 · Delete 清空和弦 · 空格/0 清空并前进
       </div>
       <div id="score-grid" class="score-grid"></div>
     </section>

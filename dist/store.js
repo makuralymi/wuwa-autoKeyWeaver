@@ -115,24 +115,37 @@ const WM = (() => {
 (NQ)C/A/ADHJ/Q/
 `;
 
-  // 解析记谱文本为拍序列（每拍 = 同时按下的音符编号数组）
+  // 解析记谱文本为音符事件序列（每 token = 一拍 = 4 分音符）
   function parseChart(text) {
-    const beats = [];
+    const events = [];
     for (const m of text.matchAll(/\(([A-Z]+)\)|([A-Z])/g)) {
       const letters = m[1] ? [...m[1]] : [m[2]];
-      const beat = [...new Set(letters.map((k) => KEY_TO_NOTE[k]).filter((n) => n))];
-      if (beat.length) beats.push(beat);
+      const ids = [...new Set(letters.map((k) => KEY_TO_NOTE[k]).filter((n) => n))];
+      if (ids.length) events.push({ ids, ticks: 4 });
     }
-    return beats;
+    return events;
   }
 
-  // 归整单拍：兼容旧版“单音编号”与新版“和弦数组”
-  function normBeat(b) {
+  // 归整单个音符事件：兼容 {ids,ticks} / 旧版和弦数组 / 更旧版单音编号
+  function normEvent(b) {
     if (Array.isArray(b)) {
-      return [...new Set(b.map((n) => Math.floor(Number(n))).filter((n) => n >= 1 && n <= 21))].slice(0, 8);
+      return {
+        ids: [...new Set(b.map((n) => Math.floor(Number(n))).filter((n) => n >= 1 && n <= 21))].slice(0, 8),
+        ticks: 4,
+      };
     }
-    const n = Math.floor(Number(b));
-    return n >= 1 && n <= 21 ? [n] : [];
+    if (typeof b === "number") {
+      const n = Math.floor(b);
+      return { ids: n >= 1 && n <= 21 ? [n] : [], ticks: 4 };
+    }
+    if (b && typeof b === "object") {
+      const ids = (Array.isArray(b.ids) ? b.ids : [])
+        .map((n) => Math.floor(Number(n)))
+        .filter((n) => n >= 1 && n <= 21);
+      const ticks = Math.max(1, Math.min(64, Math.floor(Number(b.ticks)) || 4));
+      return { ids: [...new Set(ids)].slice(0, 8), ticks };
+    }
+    return { ids: [], ticks: 4 };
   }
 
   /* ---------- 事件订阅（Rust 广播 / 浏览器本地分发） ---------- */
@@ -147,10 +160,10 @@ const WM = (() => {
 
   /* ---------- 默认数据 ---------- */
   const LS_KEY = "wuwa-music-store-v2";
-  const MAX_BEATS = 1024;
+  const MAX_NOTES = 1024;
   function defaultStore() {
     return {
-      songs: [{ name: "远航星的告别", bpm: 96, notes: parseChart(CHART_TEXT) }],
+      songs: [{ name: "远航星的告别", bpm: 96, beats_per_measure: 4, notes: parseChart(CHART_TEXT) }],
       current: 0,
       countdown: 3,
     };
@@ -162,7 +175,8 @@ const WM = (() => {
         const s = JSON.parse(raw);
         if (s && Array.isArray(s.songs) && s.songs.length) {
           s.songs.forEach((song) => {
-            song.notes = (song.notes || []).map(normBeat).slice(0, MAX_BEATS);
+            song.beats_per_measure = Math.max(1, Math.min(16, song.beats_per_measure | 0)) || 4;
+            song.notes = (song.notes || []).map(normEvent).slice(0, MAX_NOTES);
           });
           s.countdown = Math.max(0, Math.min(60, s.countdown | 0));
           return s;
@@ -226,11 +240,13 @@ const WM = (() => {
     emitLocal("countdown", 0);
     const song = store.songs[store.current];
     if (!song) return end();
-    const beat = 60000 / Math.max(20, Math.min(600, song.bpm));
+    const beat_ms = 60000 / Math.max(20, Math.min(600, song.bpm));
+    const tick_ms = beat_ms / 4;
     for (let i = 0; i < song.notes.length; i++) {
       if (!(await wait(0))) return end();
       emitLocal("play-progress", i);
-      if (!(await wait(beat))) return end();
+      const ev = song.notes[i];
+      if (!(await wait(tick_ms * (ev.ticks || 4)))) return end();
     }
     end();
   }
@@ -284,5 +300,5 @@ const WM = (() => {
         minimizeToTray: async () => {},
       };
 
-  return { isTauri, on, api, KEY_ROWS, KEY_TO_NOTE, noteHtml, MAX_BEATS, parseChart, normBeat, CHART_TEXT };
+  return { isTauri, on, api, KEY_ROWS, KEY_TO_NOTE, noteHtml, MAX_NOTES, parseChart, normEvent, CHART_TEXT };
 })();

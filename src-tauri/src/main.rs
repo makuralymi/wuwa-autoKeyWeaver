@@ -24,15 +24,30 @@ static GAME_GUARD: AtomicBool = AtomicBool::new(false);
 /// 播放停止原因：0=正常/用户停止，1=切屏（游戏失焦自动停止）
 static STOP_REASON: AtomicU32 = AtomicU32::new(0);
 
-const MAX_BEATS: usize = 1024;
+const MAX_NOTES: usize = 1024;
 const MAX_CHORD: usize = 8;
+
+/// 单个音符事件：一个和弦（可空 = 休止）+ 时值
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteEvent {
+    pub ids: Vec<u8>,
+    /// 时长，单位 = 1/4 拍（16 分音符 = 1，8 分 = 2，4 分 = 4，2 分 = 8，全音符 = 16，附点 ×1.5）
+    pub ticks: u8,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Song {
     pub name: String,
     pub bpm: u32,
-    /// 每拍 = 同时按下的音符编号列表（空 = 休止）
-    pub notes: Vec<Vec<u8>>,
+    /// 拍号分子（每小节拍数），默认 4 = 4/4 拍
+    #[serde(default = "default_beats_per_measure")]
+    pub beats_per_measure: u8,
+    /// 音符事件序列（含时值）
+    pub notes: Vec<NoteEvent>,
+}
+
+fn default_beats_per_measure() -> u8 {
+    4
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +64,11 @@ impl Default for Store {
             songs: vec![Song {
                 name: "远航星的告别".into(),
                 bpm: 96,
-                notes: parse_chart(DEFAULT_SONG_TEXT),
+                beats_per_measure: 4,
+                notes: parse_chart(DEFAULT_SONG_TEXT)
+                    .into_iter()
+                    .map(|ids| NoteEvent { ids, ticks: 4 })
+                    .collect(),
             }],
             current: 0,
             countdown: 3,
@@ -57,7 +76,7 @@ impl Default for Store {
     }
 }
 
-/// 旧版（每拍单音）存储格式，用于迁移
+/// 旧版存储格式，用于迁移（音符为「一拍一个和弦数组」或更早的「单音编号」）
 #[derive(Deserialize)]
 struct RawStore {
     songs: Vec<RawSong>,
@@ -68,13 +87,19 @@ struct RawStore {
 struct RawSong {
     name: String,
     bpm: u32,
-    notes: Vec<RawBeat>,
+    #[serde(default)]
+    beats_per_measure: Option<u8>,
+    notes: Vec<RawNote>,
 }
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum RawBeat {
-    One(u8),
-    Many(Vec<u8>),
+enum RawNote {
+    /// 新版：{ ids, ticks }
+    Event { ids: Vec<u8>, ticks: u8 },
+    /// 旧版：一拍一个和弦数组
+    Chord(Vec<u8>),
+    /// 更旧版：单音编号
+    Single(u8),
 }
 
 fn raw_to_store(raw: RawStore) -> Store {
@@ -85,20 +110,23 @@ fn raw_to_store(raw: RawStore) -> Store {
             .map(|s| Song {
                 name: s.name,
                 bpm: s.bpm,
+                beats_per_measure: s.beats_per_measure.unwrap_or(4),
                 notes: s
                     .notes
                     .into_iter()
                     .map(|b| match b {
-                        RawBeat::One(n) => {
-                            if (1..=21).contains(&n) {
-                                vec![n]
-                            } else {
-                                vec![]
-                            }
-                        }
-                        RawBeat::Many(v) => {
-                            v.into_iter().filter(|n| (1..=21).contains(n)).collect()
-                        }
+                        RawNote::Event { ids, ticks } => NoteEvent {
+                            ids: ids.into_iter().filter(|n| (1..=21).contains(n)).collect(),
+                            ticks: ticks.clamp(1, 64),
+                        },
+                        RawNote::Chord(v) => NoteEvent {
+                            ids: v.into_iter().filter(|n| (1..=21).contains(n)).collect(),
+                            ticks: 4,
+                        },
+                        RawNote::Single(n) => NoteEvent {
+                            ids: if (1..=21).contains(&n) { vec![n] } else { vec![] },
+                            ticks: 4,
+                        },
                     })
                     .collect(),
             })
@@ -114,19 +142,22 @@ fn sanitize(mut s: Store) -> Store {
         s.songs.push(Song {
             name: "新曲谱".into(),
             bpm: 120,
-            notes: vec![vec![]; 32],
+            beats_per_measure: 4,
+            notes: vec![NoteEvent { ids: vec![], ticks: 4 }; 32],
         });
     }
     for song in &mut s.songs {
         song.bpm = song.bpm.clamp(20, 600);
-        song.notes.truncate(MAX_BEATS);
+        song.beats_per_measure = song.beats_per_measure.clamp(1, 16);
+        song.notes.truncate(MAX_NOTES);
         if song.notes.is_empty() {
-            song.notes.push(vec![]);
+            song.notes.push(NoteEvent { ids: vec![], ticks: 4 });
         }
-        for beat in &mut song.notes {
-            beat.truncate(MAX_CHORD);
-            beat.retain(|n| (1..=21).contains(n));
-            beat.dedup();
+        for ev in &mut song.notes {
+            ev.ids.truncate(MAX_CHORD);
+            ev.ids.retain(|n| (1..=21).contains(n));
+            ev.ids.dedup();
+            ev.ticks = ev.ticks.clamp(1, 64);
         }
         if song.name.trim().is_empty() {
             song.name = "未命名曲谱".into();
@@ -234,21 +265,18 @@ fn play_current(state: State<'_, AppStore>, app: AppHandle) -> Result<(), String
         // 演奏阶段：启用「仅游戏内发送按键」守卫（切屏自动停止，倒计时阶段不启用）
         GAME_GUARD.store(true, Ordering::SeqCst);
 
-        // 演奏阶段：每拍按下和弦全部按键，拍尾松开
-        let beat = Duration::from_millis(60_000 / u64::from(song.bpm));
-        let hold = beat * 7 / 10;
+        // 演奏阶段：按事件时值按下/松开和弦按键
+        let beat_ms = 60_000 / u64::from(song.bpm); // 四分音符时长
+        let tick_ms = beat_ms / 4; // 1 tick = 1/4 拍
         let mut held: Vec<char> = Vec::new();
-        for (i, beat_notes) in song.notes.iter().enumerate() {
+        for (i, ev) in song.notes.iter().enumerate() {
             if stopped() {
                 break;
             }
             if !wait(Duration::ZERO, &mut held, gen) {
                 break; // 从暂停中醒来后发现已停止
             }
-            let mut chars: Vec<char> = beat_notes
-                .iter()
-                .filter_map(|&id| note_to_char(id))
-                .collect();
+            let mut chars: Vec<char> = ev.ids.iter().filter_map(|&id| note_to_char(id)).collect();
             chars.dedup();
             for &ch in &chars {
                 keyboard::press(ch);
@@ -256,6 +284,8 @@ fn play_current(state: State<'_, AppStore>, app: AppHandle) -> Result<(), String
             held = chars;
             let _ = app.emit("play-progress", i as u32);
 
+            let dur = Duration::from_millis(tick_ms * u64::from(ev.ticks));
+            let hold = dur * 7 / 10;
             if !wait(hold, &mut held, gen) {
                 break;
             }
@@ -263,7 +293,7 @@ fn play_current(state: State<'_, AppStore>, app: AppHandle) -> Result<(), String
                 keyboard::release(ch);
             }
             held.clear();
-            let tail = beat.saturating_sub(hold);
+            let tail = dur.saturating_sub(hold);
             if !wait(tail, &mut held, gen) {
                 break;
             }
@@ -423,6 +453,59 @@ fn wait(mut remain: Duration, held: &mut Vec<char>, gen: u64) -> bool {
         let step = Duration::from_millis(10).min(remain);
         std::thread::sleep(step);
         remain -= step;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_old_note_format() {
+        let raw = RawStore {
+            songs: vec![RawSong {
+                name: "test".into(),
+                bpm: 120,
+                beats_per_measure: None,
+                notes: vec![
+                    RawNote::Chord(vec![1, 2, 3]),       // 旧版和弦数组
+                    RawNote::Single(5),                   // 更旧版单音编号
+                    RawNote::Event { ids: vec![8], ticks: 2 }, // 新版带时值
+                ],
+            }],
+            current: 0,
+            countdown: 3,
+        };
+        let store = raw_to_store(raw);
+        let song = &store.songs[0];
+        assert_eq!(song.beats_per_measure, 4, "缺失拍号应默认 4/4");
+        assert_eq!(song.notes.len(), 3);
+        assert_eq!(song.notes[0].ids, vec![1, 2, 3]);
+        assert_eq!(song.notes[0].ticks, 4, "旧版一拍 = 四分音符");
+        assert_eq!(song.notes[1].ids, vec![5]);
+        assert_eq!(song.notes[1].ticks, 4);
+        assert_eq!(song.notes[2].ids, vec![8]);
+        assert_eq!(song.notes[2].ticks, 2, "新版保留时值");
+    }
+
+    #[test]
+    fn sanitize_clamps_ticks_and_measure() {
+        let store = sanitize(Store {
+            songs: vec![Song {
+                name: "t".into(),
+                bpm: 9999,
+                beats_per_measure: 99,
+                notes: vec![NoteEvent { ids: vec![1, 99, 2, 2], ticks: 200 }],
+            }],
+            current: 0,
+            countdown: 999,
+        });
+        let s = &store.songs[0];
+        assert_eq!(s.bpm, 600);
+        assert_eq!(s.beats_per_measure, 16);
+        assert_eq!(s.notes[0].ids, vec![1, 2], "越界音符过滤 + 去重");
+        assert_eq!(s.notes[0].ticks, 64);
+        assert_eq!(store.countdown, 60);
     }
 }
 

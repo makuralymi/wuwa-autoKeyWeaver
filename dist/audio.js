@@ -25,11 +25,14 @@ const AUDIO = (() => {
     return ctx;
   }
 
-  // 音符编号 → MIDI 音高
+  // 大调音阶半音间隔（do re mi fa sol la ti）
+  const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+
+  // 音符编号 → MIDI 音高（简谱 1=C，中八度 1 = C4）
   function noteMidi(id) {
-    if (id >= 1 && id <= 7) return 47 + id; // 低八度 1=C3
-    if (id >= 8 && id <= 14) return 52 + id; // 中八度 1=C4
-    if (id >= 15 && id <= 21) return 57 + id; // 高八度 1=C5
+    if (id >= 1 && id <= 7) return 48 + MAJOR[id - 1]; // 低八度 1=C3
+    if (id >= 8 && id <= 14) return 60 + MAJOR[id - 8]; // 中八度 1=C4
+    if (id >= 15 && id <= 21) return 72 + MAJOR[id - 15]; // 高八度 1=C5
     return 0;
   }
 

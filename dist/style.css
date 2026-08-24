@@ -172,7 +172,7 @@ main {
   min-height: 80px;
 }
 .cell {
-  width: 58px;
+  min-width: 24px;
   height: 76px;
   border-radius: 8px;
   border: 1px solid var(--panel-border);
@@ -184,8 +184,9 @@ main {
   justify-content: center;
   gap: 4px;
   position: relative;
+  flex-shrink: 0;
 }
-.cell:nth-child(4n) { margin-right: 14px; } /* 每 4 拍一组，方便看小节 */
+.cell.bar-start { border-left: 2px solid var(--accent); } /* 小节起始线 */
 .cell:hover { background: var(--cell-hover); }
 .cell.selected {
   border-color: var(--accent);
@@ -195,12 +196,23 @@ main {
   border-color: var(--playing);
   background: rgba(255, 209, 102, 0.14);
 }
-.cell .beat-no {
+.cell .measure-no {
   position: absolute;
   top: 3px;
   left: 5px;
   font-size: 9px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.cell .dur-badge {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
   color: var(--text-dim);
+  white-space: nowrap;
+  pointer-events: none;
 }
 .cell .chord {
   display: flex;
@@ -212,6 +224,30 @@ main {
 .cell .chord .jianpu { font-size: 15px; }
 .cell .chord .dot { font-size: 7px; height: 4px; }
 .cell.rest .jianpu { color: var(--text-dim); font-weight: 400; }
+
+/* ---------- 时长选择器与编辑工具 ---------- */
+.score-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.duration-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+.dur-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--cell);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.dur-btn:hover { background: var(--cell-hover); }
+.dur-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dur-btn:disabled { opacity: 0.45; cursor: default; }
+.total-beats { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.total-beats b { color: var(--text); }
 
 /* ---------- 谱面切换栏 ---------- */
 .song-tabs {
